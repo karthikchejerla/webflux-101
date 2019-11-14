@@ -1,18 +1,18 @@
 package io.monster.learn.reactive.webflux101.controller;
 
 import io.monster.learn.reactive.webflux101.resource.User;
-import io.monster.learn.reactive.webflux101.resource.UserEvent;
 import io.monster.learn.reactive.webflux101.service.UserService;
-import org.springframework.http.MediaType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.time.Duration;
-import java.time.LocalDateTime;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 public class UserController {
+
+    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
 
     private UserService userService;
 
@@ -27,7 +27,14 @@ public class UserController {
 
     @GetMapping("/users/{userId}")
     public Mono<User> getUserById(@PathVariable String userId) {
-        return userService.getUserById(userId);
+        logger.debug("UserByIdNonBlockingController - executing on thread: " + Thread.currentThread().getId());
+        return userService.getUserById(userId).switchIfEmpty(Mono.error(UserNotFoundException::new));
+    }
+
+    @GetMapping("/users/blocking/{userId}")
+    public Mono<User> getUserByIdBlocking(@PathVariable String userId) throws Exception {
+        logger.debug("UserByIdBlockingController - executing on thread: " + Thread.currentThread().getId());
+        return Mono.fromSupplier(() -> userService.getUserByIdBlockingCall(userId)).publishOn(Schedulers.boundedElastic());
     }
 
     @PostMapping("/users")
@@ -40,14 +47,17 @@ public class UserController {
         return userService.computeAverageAgeOfUsers();
     }
 
-    @GetMapping(value = "/freeMemory", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<UserEvent> getJvmInfo() {
-        return Flux.<UserEvent>generate(sink -> {
-            System.out.println(Thread.currentThread().getId());
-            sink.next(new UserEvent("test", LocalDateTime.now()));
-        })
-                .delayElements(Duration.ofSeconds(1));
+}
+
+
+class UserNotFoundException extends Throwable {
+    private static final Logger logger = LoggerFactory.getLogger(UserNotFoundException.class);
+
+    UserNotFoundException() {
+        logger.debug("User not found exception");
     }
 
-
+    public UserNotFoundException(String message) {
+        super(message);
+    }
 }
